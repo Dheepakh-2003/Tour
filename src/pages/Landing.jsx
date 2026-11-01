@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
-import BannerSlider from '../components/BannerSlider.jsx';
-import { bannerApi } from '../services/api.js';
+import BannerSection from '../components/BannerSection.jsx';
+import SiteFooter from '../components/SiteFooter.jsx';
+import { bannerApi, footerApi } from '../services/api.js';
 import '../styles/landing.css';
 
 const REFRESH_MS = 30_000;
 
 export default function Landing() {
   const [banners, setBanners] = useState([]);
+  const [footer, setFooter] = useState(null);
   const [status, setStatus] = useState('loading'); // loading | ready | error
 
   const load = useCallback(async () => {
     try {
-      setBanners(await bannerApi.list());
+      // The footer is optional: a failure there must not hide the banners.
+      const [list, footerData] = await Promise.all([bannerApi.list(), footerApi.get().catch(() => null)]);
+      setBanners(list);
+      if (footerData) setFooter(footerData);
       setStatus('ready');
     } catch {
       // Keep showing what we have if a background refresh fails.
@@ -50,8 +55,9 @@ export default function Landing() {
             <p>New stories will appear here soon.</p>
           </div>
         )}
-        {status === 'ready' && banners.length > 0 && <BannerSlider banners={banners} />}
+        {status === 'ready' && banners.map((banner) => <BannerSection key={banner.id} banner={banner} />)}
       </main>
+      {status === 'ready' && <SiteFooter footer={footer} />}
     </div>
   );
 }

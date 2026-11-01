@@ -1,4 +1,5 @@
 /** Thin service layer over the Tour REST API. */
+import { prepareImage, sizeProblem } from '../utils/image.js';
 
 export class ApiError extends Error {
   constructor(message, status) {
@@ -30,19 +31,32 @@ const jsonRequest = (method, body) => ({
   body: JSON.stringify(body),
 });
 
-function bannerFormData({ image, header, description }) {
-  const form = new FormData();
-  if (image) form.append('image', image);
-  form.append('header', header);
-  form.append('description', description);
-  return form;
-}
-
+/** Banner payload: { header, description, images: [uploadPath, ...] } */
 export const bannerApi = {
   list: () => request('/banners'),
-  create: (data) => request('/banners', { method: 'POST', body: bannerFormData(data) }),
-  update: (id, data) => request(`/banners/${id}`, { method: 'PUT', body: bannerFormData(data) }),
+  create: (data) => request('/banners', jsonRequest('POST', data)),
+  update: (id, data) => request(`/banners/${id}`, jsonRequest('PUT', data)),
   remove: (id) => request(`/banners/${id}`, { method: 'DELETE' }),
+};
+
+/** Footer payload: { name, imagePath } */
+export const footerApi = {
+  get: () => request('/footer'),
+  save: (data) => request('/footer', jsonRequest('PUT', data)),
+};
+
+export const uploadApi = {
+  /** Uploads one image (shrunk in the browser first). Resolves to { path, url }. */
+  async upload(file, options) {
+    const prepared = await prepareImage(file, options);
+    const problem = sizeProblem(prepared);
+    if (problem) throw new ApiError(problem, 413);
+    const form = new FormData();
+    form.append('image', prepared);
+    return request('/uploads', { method: 'POST', body: form });
+  },
+  /** Removes an upload that was never saved to a banner/footer. Failures are not important. */
+  discard: (path) => request('/uploads', jsonRequest('DELETE', { path })).catch(() => {}),
 };
 
 export const authApi = {

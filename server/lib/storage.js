@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { DATA_PATH, LOCK_PATH, UPLOAD_DIR, bucketName } from './config.js';
+import { DATA_PATH, FOOTER_PATH, IMAGE_PATH_PATTERN, LOCK_PATH, UPLOAD_DIR, bucketName } from './config.js';
 import { HttpError } from './errors.js';
 import { bucket, fetchObjectText, storage } from './supabase.js';
 
@@ -7,13 +7,20 @@ const LOCK_STALE_MS = 20_000;
 const LOCK_TIMEOUT_MS = 12_000;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const EMPTY_FOOTER = { people: [] };
+/** JSON files created automatically when missing. */
+const INITIAL_FILES = {
+  [DATA_PATH]: '[]',
+  [FOOTER_PATH]: JSON.stringify(EMPTY_FOOTER),
+};
+
 let ready = false;
 let readyPromise = null;
 
 const isAlreadyExists = (error) =>
   String(error?.statusCode) === '409' || /already exists|duplicate/i.test(error?.message || '');
 
-/** Creates the bucket and an empty banners.json when they do not exist yet. */
+/** Creates the bucket and any missing JSON data files. */
 async function ensureStorage(force = false) {
   if (ready && !force) return;
   readyPromise ??= (async () => {
@@ -24,15 +31,17 @@ async function ensureStorage(force = false) {
       const { error } = await storage().createBucket(bucketName(), { public: true });
       if (error && !isAlreadyExists(error)) throw new Error(`Cannot create bucket: ${error.message}`);
     }
-    const { data: files, error } = await bucket().list('data', { search: 'banners.json' });
+    const { data: files, error } = await bucket().list('data');
     if (error) throw new Error(`Cannot list data folder: ${error.message}`);
-    if (!files.some((f) => f.name === 'banners.json')) {
-      const { error: createError } = await bucket().upload(DATA_PATH, '[]', {
+    const existing = new Set(files.map((f) => f.name));
+    for (const [path, body] of Object.entries(INITIAL_FILES)) {
+      if (existing.has(path.split('/').pop())) continue;
+      const { error: createError } = await bucket().upload(path, body, {
         contentType: 'application/json',
         cacheControl: '0',
         upsert: false,
       });
-      if (createError && !isAlreadyExists(createError)) throw new Error(`Cannot create banners.json: ${createError.message}`);
+      if (createError && !isAlreadyExists(createError)) throw new Error(`Cannot create ${path}: ${createError.message}`);
     }
     ready = true;
   })().finally(() => {
@@ -41,37 +50,59 @@ async function ensureStorage(force = false) {
   await readyPromise;
 }
 
-async function downloadBanners() {
-  const text = await fetchObjectText(DATA_PATH);
-  if (text === null) throw new Error('Cannot read banners.json: not found');
-  const parsed = JSON.parse(text);
-  if (!Array.isArray(parsed)) throw new Error('banners.json is corrupted: expected an array.');
-  return parsed;
+/* ------------------------------ normalisers ------------------------------ */
+
+/** Banners created before multi-image support stored a single image/imagePath. */
+function normalizeBanner(banner) {
+  if (Array.isArray(banner.images)) return banner;
+  const { image, imagePath, ...rest } = banner;
+  return { ...rest, images: imagePath ? [{ path: imagePath, url: image }] : [] };
 }
 
-/** Reads all banners (oldest first). Never silently treats a read failure as "empty". */
-export async function readBanners() {
+function normalizeBanners(value) {
+  if (!Array.isArray(value)) throw new Error('banners.json is corrupted: expected an array.');
+  return value.map(normalizeBanner);
+}
+
+/** Footers saved before multi-profile support held a single { name, image, imagePath }. */
+function normalizeFooter(value) {
+  const object = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  if (Array.isArray(object.people)) return { ...object, people: object.people };
+  const legacy = object.name || object.imagePath ? [{ id: 'profile-1', name: object.name || '', image: object.image ?? null, imagePath: object.imagePath ?? null }] : [];
+  return { people: legacy, updatedAt: object.updatedAt };
+}
+
+/* ------------------------------ JSON files ------------------------------- */
+
+async function downloadJson(path, normalize) {
+  const text = await fetchObjectText(path);
+  if (text === null) throw new Error(`Cannot read ${path}: not found`);
+  return normalize(JSON.parse(text));
+}
+
+/** Never silently treats a read failure as "empty". */
+async function readJson(path, normalize) {
   await ensureStorage();
   try {
-    return await downloadBanners();
+    return await downloadJson(path, normalize);
   } catch (firstError) {
     // The file may have been removed while this instance was warm: re-check once.
     await ensureStorage(true);
     try {
-      return await downloadBanners();
+      return await downloadJson(path, normalize);
     } catch {
       throw firstError;
     }
   }
 }
 
-async function writeBanners(banners) {
-  const { error } = await bucket().upload(DATA_PATH, JSON.stringify(banners, null, 2), {
+async function writeJson(path, value) {
+  const { error } = await bucket().upload(path, JSON.stringify(value, null, 2), {
     contentType: 'application/json',
     cacheControl: '0',
     upsert: true,
   });
-  if (error) throw new Error(`Cannot write banners.json: ${error.message}`);
+  if (error) throw new Error(`Cannot write ${path}: ${error.message}`);
 }
 
 /* ------------------------------------------------------------------ *
@@ -112,17 +143,17 @@ async function acquireLock() {
 }
 
 /**
- * Runs `mutator(banners)` under an exclusive lock and saves the array it returns.
- * The mutator returns `{ banners, result }`; `result` is passed back to the caller.
+ * Runs `mutator(current)` under an exclusive lock and saves the `data` it returns.
+ * The mutator returns `{ data, result }`; `result` is passed back to the caller.
  */
-export function updateBanners(mutator) {
+function updateJson(path, normalize, mutator) {
   const run = async () => {
     await ensureStorage();
     await acquireLock();
     try {
-      const current = await downloadBanners();
-      const { banners, result } = await mutator(current);
-      await writeBanners(banners);
+      const current = await downloadJson(path, normalize);
+      const { data, result } = await mutator(current);
+      await writeJson(path, data);
       return result;
     } finally {
       await bucket().remove([LOCK_PATH]).catch(() => {});
@@ -133,9 +164,14 @@ export function updateBanners(mutator) {
   return next;
 }
 
+export const readBanners = () => readJson(DATA_PATH, normalizeBanners);
+export const updateBanners = (mutator) => updateJson(DATA_PATH, normalizeBanners, mutator);
+export const readFooter = () => readJson(FOOTER_PATH, normalizeFooter);
+export const updateFooter = (mutator) => updateJson(FOOTER_PATH, normalizeFooter, mutator);
+
 /* ------------------------------ images ------------------------------ */
 
-const SAFE_IMAGE_PATH = /^uploads\/[A-Za-z0-9._-]+$/;
+export const imageUrl = (imagePath) => bucket().getPublicUrl(imagePath).data.publicUrl;
 
 export async function uploadImage({ buffer, mimeType, extension }) {
   await ensureStorage();
@@ -149,12 +185,12 @@ export async function uploadImage({ buffer, mimeType, extension }) {
     console.error('Image upload failed:', error.message);
     throw new HttpError(502, 'Image upload failed. Please try again.');
   }
-  return { imagePath, imageUrl: bucket().getPublicUrl(imagePath).data.publicUrl };
+  return { path: imagePath, url: imageUrl(imagePath) };
 }
 
 /** Best-effort delete; refuses anything outside uploads/ (path-traversal guard). */
 export async function deleteImage(imagePath) {
-  if (typeof imagePath !== 'string' || !SAFE_IMAGE_PATH.test(imagePath) || imagePath.includes('..')) return;
+  if (typeof imagePath !== 'string' || !IMAGE_PATH_PATTERN.test(imagePath) || imagePath.includes('..')) return;
   const { error } = await bucket().remove([imagePath]);
   if (error) console.error(`Could not delete ${imagePath}:`, error.message);
 }

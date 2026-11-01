@@ -4,6 +4,8 @@ import cors from 'cors';
 import express from 'express';
 import bannerById from '../api/banners/[id].js';
 import banners from '../api/banners/index.js';
+import footer from '../api/footer.js';
+import uploads from '../api/uploads.js';
 import login from '../api/auth/login.js';
 import logout from '../api/auth/logout.js';
 import me from '../api/auth/me.js';
@@ -24,6 +26,8 @@ const withId = (handler) => (req, res) => {
 
 app.all('/api/banners', banners);
 app.all('/api/banners/:id', withId(bannerById));
+app.all('/api/uploads', uploads);
+app.all('/api/footer', footer);
 app.all('/api/auth/login', login);
 app.all('/api/auth/logout', logout);
 app.all('/api/auth/me', me);

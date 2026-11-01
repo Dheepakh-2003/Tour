@@ -20,14 +20,6 @@
 .banner-item-actions { display: flex; gap: 0.4rem; }
 .banner-item-actions .btn { padding: 0.45rem 0.95rem; }
 
-.dropzone {
-  display: grid; place-items: center; min-height: 180px; border: 2px dashed var(--line); border-radius: 14px; background: #fff;
-  cursor: pointer; overflow: hidden; text-align: center; padding: 1rem; color: var(--ink-soft); font-size: 0.92rem; transition: border-color 0.2s;
-}
-.dropzone:hover { border-color: var(--accent); }
-.dropzone.has-error { border-color: var(--danger); }
-.dropzone img { width: calc(100% + 2rem); height: 220px; margin: -1rem; object-fit: cover; }
-.dropzone input { display: none; }
 
 .password-wrap { position: relative; }
 .password-wrap input { padding-right: 2.9rem; }
@@ -49,3 +41,56 @@
   .banner-item-actions { grid-column: 1 / -1; justify-content: flex-end; }
   .admin-title .btn { width: 100%; }
 }
+
+/* Multi-image grid in the banner form */
+.image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 0.6rem; }
+.image-tile { position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: var(--line); }
+.image-tile img { width: 100%; height: 100%; object-fit: cover; }
+.image-add {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.1rem; background: #fff;
+  border: 2px dashed var(--line); color: var(--ink-soft); font-size: 0.8rem; cursor: pointer; text-align: center; transition: border-color 0.2s;
+}
+.image-add:hover { border-color: var(--accent); }
+.image-add.has-error { border-color: var(--danger); }
+.image-add .plus { font-size: 1.6rem; line-height: 1; }
+.image-add input { display: none; }
+.tile-remove {
+  position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; border: 0; cursor: pointer;
+  background: rgba(20, 30, 25, 0.7); color: #fff; font-size: 1rem; line-height: 1;
+}
+.tile-remove:hover:not(:disabled) { background: var(--danger); }
+.tile-badge { position: absolute; left: 4px; bottom: 4px; padding: 0.05rem 0.5rem; border-radius: 999px; background: rgba(20, 30, 25, 0.7); color: #fff; font-size: 0.7rem; }
+.tile-busy { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(244, 250, 245, 0.7); }
+.spinner.small { width: 24px; height: 24px; border-width: 3px; }
+
+/* Footer editor + panel */
+.section-heading { font-family: var(--font-serif); font-weight: 600; font-size: 1.4rem; margin: 2.5rem 0 0.9rem; }
+.footer-panel { display: flex; align-items: center; gap: 1rem; padding: 1rem; }
+.footer-panel .banner-item-body { flex: 1; min-width: 0; }
+.avatar { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; flex: none; background: var(--line); }
+.footer-edit-photo { display: flex; align-items: center; gap: 1rem; }
+.avatar-picker {
+  position: relative; display: grid; place-items: center; width: 104px; height: 104px; border-radius: 50%; overflow: hidden;
+  background: #fff; border: 2px dashed var(--line); color: var(--ink-soft); font-size: 0.85rem; cursor: pointer;
+}
+.avatar-picker:hover { border-color: var(--accent); }
+.avatar-picker img { width: 100%; height: 100%; object-fit: cover; }
+.avatar-picker input { display: none; }
+@media (max-width: 640px) { .footer-panel { flex-wrap: wrap; } }
+
+/* Footer profile editor */
+.people-hint { margin: -0.7rem 0 1rem; font-size: 0.9rem; }
+.people-empty { margin-bottom: 1rem; }
+.people-editor { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: 0.7rem; }
+.person-row { display: flex; align-items: flex-start; gap: 0.75rem; }
+.avatar-small { width: 64px; height: 64px; flex: none; font-size: 0.75rem; }
+.person-name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; padding-top: 0.55rem; }
+.person-name input { width: 100%; padding: 0.65rem 0.8rem; background: #fff; border: 1px solid var(--line); border-radius: 12px; }
+.icon-btn {
+  flex: none; width: 36px; height: 36px; margin-top: 0.7rem; border: 0; border-radius: 50%; background: transparent;
+  color: var(--ink-soft); font-size: 1.3rem; line-height: 1; cursor: pointer;
+}
+.icon-btn:hover:not(:disabled) { background: rgba(179, 50, 31, 0.1); color: var(--danger); }
+.avatar-stack { display: flex; flex: none; }
+.avatar-stack .avatar { margin-left: -14px; border: 2px solid var(--surface); }
+.avatar-stack .avatar:first-child { margin-left: 0; }
